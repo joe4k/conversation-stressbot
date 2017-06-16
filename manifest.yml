@@ -1,5 +1,5 @@
 applications:
-- name: jk-conv-nlu-ta
+- name: stressbot
   command: npm start
   path: .
   memory: 256M

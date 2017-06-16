@@ -43,14 +43,6 @@ var conversation = watson.conversation( {
   version: 'v1'
 } );
 
-// Create service wrapper for Natural Language Understanding
-const NaturalLanguageUnderstandingV1 = require('watson-developer-cloud/natural-language-understanding/v1.js');
-const nlu = new NaturalLanguageUnderstandingV1({
-  'username': process.env.NATURAL_LANGUAGE_UNDERSTANDING_USERNAME || '<username>',
-  'password': process.env.NATURAL_LANGUAGE_UNDERSTANDING_PASSWORD || '<password>',
-  version_date: NaturalLanguageUnderstandingV1.VERSION_DATE_2017_02_27
-});
-
 // Create service wrapper for Tone Analyzer
 var tone_analyzer = watson.tone_analyzer({
   username: process.env.TONE_ANALYZER_USERNAME || '{username}',
@@ -59,12 +51,6 @@ var tone_analyzer = watson.tone_analyzer({
   version_date: '2016-05-19'
 });
 
-
-// Define what features you want to extract with NLU
-// In this case, we're only interested in entities
-var features= {
-    entities: {}
-};
 
 /*
 tone data: {"document_tone":{"tone_categories":[{"tones":[{"score":0.004075,"tone_id":"anger","tone_name":"Anger"},{"score":0.001487,"tone_id":"disgust","tone_name":"Disgust"},{"score":0.070839,"tone_id":"fear","tone_name":"Fear"},{"score":0.889328,"tone_id":"joy","tone_name":"Joy"},{"score":0.01741,"tone_id":"sadness","tone_name":"Sadness"}],"category_id":"emotion_tone","category_name":"Emotion Tone"},{"tones":[{"score":0,"tone_id":"analytical","tone_name":"Analytical"},{"score":0,"tone_id":"confident","tone_name":"Confident"},{"score":0,"tone_id":"tentative","tone_name":"Tentative"}],"category_id":"language_tone","category_name":"Language Tone"},{"tones":[{"score":0.138909,"tone_id":"openness_big5","tone_name":"Openness"},{"score":0.274024,"tone_id":"conscientiousness_big5","tone_name":"Conscientiousness"},{"score":0.547691,"tone_id":"extraversion_big5","tone_name":"Extraversion"},{"score":0.60039,"tone_id":"agreeableness_big5","tone_name":"Agreeableness"},{"score":0.231551,"tone_id":"emotional_range_big5","tone_name":"Emotional Range"}],"category_id":"social_tone","category_name":"Social Tone"}]}}
@@ -88,11 +74,9 @@ app.post( '/api/message', function(req, res) {
     context: {},
     input: {}
   };
-  var params = null;
   if ( req.body ) {
     if ( req.body.input ) {
       payload.input = req.body.input;
-      params = {text: req.body.input.text,features:features};
     }
     if ( req.body.context ) {
       // The client must maintain context/state
@@ -100,100 +84,46 @@ app.post( '/api/message', function(req, res) {
     }
   }
 
-  if(params == null) {
-   params = {text: "Some sample input",features:features}
-  }
-
   //payload.context.tone = "joy";
-  nlu.analyze(params, function(error, response) {
-        if (error) {
-          return res.status(error.code || 500).json(error);
-        }
-        if(response != null) {
-          var entities = response.entities;
-          var cityList = entities.map(function(entry) {
-                if(entry.type == "Location") {
-		 if(entry.disambiguation && entry.disambiguation.subtype && entry.disambiguation.subtype.indexOf("City") > -1) {
-		  return(entry.text);
-		 }
-		}
-          });
-	  cityList = cityList.filter(function(entry) {
-		if(entry != null) {
-		 return(entry);
-		}
-	  });
-	  if(cityList.length > 0) {
-	   payload.context.appCity = cityList[0];
-	  } else {
-	   payload.context.appCity = null;
-	  }
-          var stateList = entities.map(function(entry) {
-		if(entry.type == "Location") {
-		 if(!entry.disambiguation) {
-		  return(entry.text);
-		 }
-		}
-          });
-
-	  stateList = stateList.filter(function(entry) {
-		if(entry != null) {
-		 return(entry);
-		}
-	  });
-	  if (stateList.length > 0) {
-	   payload.context.appST = stateList[0];
-	  } else {
-	   payload.context.appST = null;
-	  }
-        } else {
-	 if(payload.context.appCity) {
-	  payload.context.appCity = null;
-	 }
-	 if(payload.context.appST) {
-	  payload.context.appST = null;
-	 }
-	 console.log('response from NLU entity extraction is null');
-        }
-	if (payload.context.checkTone) {
+  if (payload.context.checkTone) {
   // Send the input to the conversation service
-	  var reftext = payload.input.text;
-	  tone_analyzer.tone({text: reftext}, function (taerr, tadata) {
-	    var toneData = tadata.document_tone.tone_categories;
-
-	    var maxTone = 0.0;
-	    var mainTone = "none";
-	    for (var i=0;i<toneData.length; i++) {
-	      if(toneData[i].category_id == "emotion_tone") {
-		var emotionToneData = toneData[i].tones;
-		for(var j=0; j < emotionToneData.length; j++) {
-	          if(emotionToneData[j].score > maxTone) {
-		    maxTone = emotionToneData[j].score;
-		    mainTone = emotionToneData[j].tone_id;
-		  }
-		}
+    var reftext = payload.input.text;
+    tone_analyzer.tone({text: reftext}, function (taerr, tadata) {
+	var toneData = tadata.document_tone.tone_categories;
+	var maxTone = 0.0;
+	var mainTone = "none";
+	for (var i=0;i<toneData.length; i++) {
+	  if(toneData[i].category_id == "emotion_tone") {
+	    var emotionToneData = toneData[i].tones;
+	    for(var j=0; j < emotionToneData.length; j++) {
+	      if(emotionToneData[j].score > maxTone) {
+	        maxTone = emotionToneData[j].score;
+	        mainTone = emotionToneData[j].tone_id;
 	      }
 	    }
-	    payload.context.tone = mainTone;
-            conversation.message(payload, function(err, data) {
-                if (err) {
-                  return res.status(err.code || 500).json(err);
-                }
-                updateResponse(res, data);
-            });
-	  });
-        } else {
-          conversation.message(payload, function(err, data) {
-                if (err) {
-                  return res.status(err.code || 500).json(err);
-                }
-                updateResponse(res, data);
-           });
+	  }
 	}
+	payload.context.tone = mainTone;
+        conversation.message(payload, function(err, data) {
+           if (err) {
+            return res.status(err.code || 500).json(err);
+           }
+            //updateResponse(res, data);
+	   return res.json(data);
+	});
+    });
+  } else {
+        conversation.message(payload, function(err, data) {
+           if (err) {
+            return res.status(err.code || 500).json(err);
+           }
+           // updateResponse(res, data);
+	   return res.json(data);
+        });
+  }
+});
 
-  });
-} );
-
+/*
 // Weather API key (https://www.wunderground.com/weather/api/)
 var weather_api_key = process.env.WEATHER_API_KEY || 'YOUR_WEATHER_API_KEY';
 function updateResponse(res, data) {
@@ -235,5 +165,6 @@ function checkWeather(data) {
   return data.intents && data.intents.length > 0 && data.intents[0].intent === 'weather'
      && (data.context != null) && (data.context.appCity != null) && (data.context.appST != null);
 };
+*/
 
 module.exports = app;
